@@ -11,7 +11,6 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/configs"
 	"github.com/xpzouying/xiaohongshu-mcp/pkg/downloader"
 	"github.com/xpzouying/xiaohongshu-mcp/pkg/xhsutil"
