@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"os"
 
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/configs"
@@ -10,26 +9,16 @@ import (
 
 func main() {
 	var (
-		headless bool
-		binPath  string // 浏览器二进制文件路径
-		port     string
+		port       string
+		sidecarURL string
 	)
-	flag.BoolVar(&headless, "headless", true, "是否无头模式")
-	flag.StringVar(&binPath, "bin", "", "浏览器二进制文件路径")
-	flag.StringVar(&port, "port", ":18060", "端口")
+	flag.StringVar(&port, "port", ":18060", "MCP 服务端口")
+	flag.StringVar(&sidecarURL, "sidecar", "http://127.0.0.1:18061", "Python sidecar 地址")
 	flag.Parse()
 
-	if len(binPath) == 0 {
-		binPath = os.Getenv("ROD_BROWSER_BIN")
-	}
+	configs.SetSidecarURL(sidecarURL)
 
-	configs.InitHeadless(headless)
-	configs.SetBinPath(binPath)
-
-	// 初始化服务
 	xiaohongshuService := NewXiaohongshuService()
-
-	// 创建并启动应用服务器
 	appServer := NewAppServer(xiaohongshuService)
 	if err := appServer.Start(port); err != nil {
 		logrus.Fatalf("failed to run server: %v", err)

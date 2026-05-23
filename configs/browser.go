@@ -1,24 +1,11 @@
 package configs
 
-var (
-	useHeadless = true
+var sidecarURL = "http://127.0.0.1:18061"
 
-	binPath = ""
-)
-
-func InitHeadless(h bool) {
-	useHeadless = h
+func SetSidecarURL(u string) {
+	sidecarURL = u
 }
 
-// IsHeadless 是否无头模式。
-func IsHeadless() bool {
-	return useHeadless
-}
-
-func SetBinPath(b string) {
-	binPath = b
-}
-
-func GetBinPath() string {
-	return binPath
+func GetSidecarURL() string {
+	return sidecarURL
 }
