@@ -2,294 +2,265 @@ package main
 
 import (
 	"net/http"
-
-	"github.com/xpzouying/xiaohongshu-mcp/cookies"
-	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
 
-// respondError 返回错误响应
-func respondError(c *gin.Context, statusCode int, code, message string, details any) {
-	response := ErrorResponse{
-		Error:   message,
-		Code:    code,
-		Details: details,
+func (s *AppServer) errorHandlingMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+
+		if len(c.Errors) > 0 {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error: c.Errors.Last().Error(),
+				Code:  "internal_error",
+			})
+		}
 	}
-
-	logrus.Errorf("%s %s %s %d", c.Request.Method, c.Request.URL.Path,
-		c.GetString("account"), statusCode)
-
-	c.JSON(statusCode, response)
 }
 
-// respondSuccess 返回成功响应
-func respondSuccess(c *gin.Context, data any, message string) {
-	response := SuccessResponse{
-		Success: true,
-		Data:    data,
-		Message: message,
-	}
-
-	logrus.Infof("%s %s %s %d", c.Request.Method, c.Request.URL.Path,
-		c.GetString("account"), http.StatusOK)
-
-	c.JSON(http.StatusOK, response)
+func (s *AppServer) healthHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, SuccessResponse{Success: true, Message: "healthy"})
 }
 
-// checkLoginStatusHandler 检查登录状态
 func (s *AppServer) checkLoginStatusHandler(c *gin.Context) {
 	status, err := s.xiaohongshuService.CheckLoginStatus(c.Request.Context())
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "STATUS_CHECK_FAILED",
-			"检查登录状态失败", err.Error())
+		logrus.Errorf("检查登录状态失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	c.Set("account", "ai-report")
-	respondSuccess(c, status, "检查登录状态成功")
+	c.JSON(http.StatusOK, SuccessResponse{Data: status})
 }
 
-// getLoginQrcodeHandler 处理 [GET /api/login/qrcode] 请求。
-// 用于生成并返回登录二维码（Base64 图片 + 超时时间），供前端展示给用户扫码登录。
 func (s *AppServer) getLoginQrcodeHandler(c *gin.Context) {
 	result, err := s.xiaohongshuService.GetLoginQrcode(c.Request.Context())
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "STATUS_CHECK_FAILED",
-			"获取登录二维码失败", err.Error())
+		logrus.Errorf("获取登录二维码失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	respondSuccess(c, result, "获取登录二维码成功")
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
 }
 
-// deleteCookiesHandler 删除 cookies，重置登录状态
 func (s *AppServer) deleteCookiesHandler(c *gin.Context) {
 	err := s.xiaohongshuService.DeleteCookies(c.Request.Context())
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "DELETE_COOKIES_FAILED",
-			"删除 cookies 失败", err.Error())
+		logrus.Errorf("删除cookies失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
-
-	cookiePath := cookies.GetCookiesFilePath()
-	respondSuccess(c, map[string]interface{}{
-		"cookie_path": cookiePath,
-		"message":     "Cookies 已成功删除，登录状态已重置。下次操作时需要重新登录。",
-	}, "删除 cookies 成功")
+	c.JSON(http.StatusOK, SuccessResponse{Success: true, Message: "cookies 已删除"})
 }
 
-// publishHandler 发布内容
 func (s *AppServer) publishHandler(c *gin.Context) {
 	var req PublishRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
-			"请求参数错误", err.Error())
+		logrus.Errorf("绑定发布请求失败: %v", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	// 执行发布
 	result, err := s.xiaohongshuService.PublishContent(c.Request.Context(), &req)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "PUBLISH_FAILED",
-			"发布失败", err.Error())
+		logrus.Errorf("发布内容失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
-
-	respondSuccess(c, result, "发布成功")
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
 }
 
-// publishVideoHandler 发布视频内容
 func (s *AppServer) publishVideoHandler(c *gin.Context) {
 	var req PublishVideoRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
-			"请求参数错误", err.Error())
+		logrus.Errorf("绑定视频发布请求失败: %v", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	// 执行视频发布
 	result, err := s.xiaohongshuService.PublishVideo(c.Request.Context(), &req)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "PUBLISH_VIDEO_FAILED",
-			"视频发布失败", err.Error())
+		logrus.Errorf("发布视频失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	respondSuccess(c, result, "视频发布成功")
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
 }
 
-// listFeedsHandler 获取Feeds列表
 func (s *AppServer) listFeedsHandler(c *gin.Context) {
-	// 获取 Feeds 列表
 	result, err := s.xiaohongshuService.ListFeeds(c.Request.Context())
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "LIST_FEEDS_FAILED",
-			"获取Feeds列表失败", err.Error())
+		logrus.Errorf("获取Feeds列表失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	c.Set("account", "ai-report")
-	respondSuccess(c, result, "获取Feeds列表成功")
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
 }
 
-// searchFeedsHandler 搜索Feeds
 func (s *AppServer) searchFeedsHandler(c *gin.Context) {
-	var keyword string
-	var filters xiaohongshu.FilterOption
-
-	switch c.Request.Method {
-	case http.MethodPost:
-		// 对于POST请求，从JSON中获取keyword
-		var searchReq SearchFeedsRequest
-		if err := c.ShouldBindJSON(&searchReq); err != nil {
-			respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
-				"请求参数错误", err.Error())
+	keyword := c.Query("keyword")
+	if keyword == "" {
+		var req SearchFeedsRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 			return
 		}
-		keyword = searchReq.Keyword
-		filters = searchReq.Filters
-	default:
-		keyword = c.Query("keyword")
+		keyword = req.Keyword
 	}
 
 	if keyword == "" {
-		respondError(c, http.StatusBadRequest, "MISSING_KEYWORD",
-			"缺少关键词参数", "keyword parameter is required")
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "keyword is required"})
 		return
 	}
 
-	// 搜索 Feeds
-	result, err := s.xiaohongshuService.SearchFeeds(c.Request.Context(), keyword, filters)
+	result, err := s.xiaohongshuService.SearchFeeds(c.Request.Context(), keyword)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "SEARCH_FEEDS_FAILED",
-			"搜索Feeds失败", err.Error())
+		logrus.Errorf("搜索Feeds失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	c.Set("account", "ai-report")
-	respondSuccess(c, result, "搜索Feeds成功")
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
 }
 
-// getFeedDetailHandler 获取Feed详情
 func (s *AppServer) getFeedDetailHandler(c *gin.Context) {
 	var req FeedDetailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
-			"请求参数错误", err.Error())
+		logrus.Errorf("绑定Feed详情请求失败: %v", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	var result *FeedDetailResponse
-	var err error
-
-	if req.CommentConfig != nil {
-		// 使用配置参数
-		config := xiaohongshu.CommentLoadConfig{
-			ClickMoreReplies:    req.CommentConfig.ClickMoreReplies,
-			MaxRepliesThreshold: req.CommentConfig.MaxRepliesThreshold,
-			MaxCommentItems:     req.CommentConfig.MaxCommentItems,
-			ScrollSpeed:         req.CommentConfig.ScrollSpeed,
-		}
-		result, err = s.xiaohongshuService.GetFeedDetailWithConfig(c.Request.Context(), req.FeedID, req.XsecToken, req.LoadAllComments, config)
-	} else {
-		// 使用默认配置
-		result, err = s.xiaohongshuService.GetFeedDetail(c.Request.Context(), req.FeedID, req.XsecToken, req.LoadAllComments)
-	}
-
+	result, err := s.xiaohongshuService.GetFeedDetail(c.Request.Context(), req.FeedID, req.XsecToken, req.LoadAllComments)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "GET_FEED_DETAIL_FAILED",
-			"获取Feed详情失败", err.Error())
+		logrus.Errorf("获取Feed详情失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	c.Set("account", "ai-report")
-	respondSuccess(c, result, "获取Feed详情成功")
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
 }
 
-// userProfileHandler 用户主页
 func (s *AppServer) userProfileHandler(c *gin.Context) {
 	var req UserProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
-			"请求参数错误", err.Error())
+		logrus.Errorf("绑定用户主页请求失败: %v", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	// 获取用户信息
 	result, err := s.xiaohongshuService.UserProfile(c.Request.Context(), req.UserID, req.XsecToken)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "GET_USER_PROFILE_FAILED",
-			"获取用户主页失败", err.Error())
+		logrus.Errorf("获取用户信息失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	c.Set("account", "ai-report")
-	respondSuccess(c, map[string]any{"data": result}, "result.Message")
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
 }
 
-// postCommentHandler 发表评论到Feed
 func (s *AppServer) postCommentHandler(c *gin.Context) {
 	var req PostCommentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
-			"请求参数错误", err.Error())
+		logrus.Errorf("绑定评论请求失败: %v", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	// 发表评论
 	result, err := s.xiaohongshuService.PostCommentToFeed(c.Request.Context(), req.FeedID, req.XsecToken, req.Content)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "POST_COMMENT_FAILED",
-			"发表评论失败", err.Error())
+		logrus.Errorf("发表评论失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	c.Set("account", "ai-report")
-	respondSuccess(c, result, result.Message)
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
 }
 
-// replyCommentHandler 回复指定评论
 func (s *AppServer) replyCommentHandler(c *gin.Context) {
 	var req ReplyCommentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
-			"请求参数错误", err.Error())
+		logrus.Errorf("绑定回复评论请求失败: %v", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	result, err := s.xiaohongshuService.ReplyCommentToFeed(c.Request.Context(), req.FeedID, req.XsecToken, req.CommentID, req.UserID, req.Content)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "REPLY_COMMENT_FAILED",
-			"回复评论失败", err.Error())
+		logrus.Errorf("回复评论失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	c.Set("account", "ai-report")
-	respondSuccess(c, result, result.Message)
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
 }
 
-// healthHandler 健康检查
-func healthHandler(c *gin.Context) {
-	respondSuccess(c, map[string]any{
-		"status":    "healthy",
+func (s *AppServer) healthCheck(c *gin.Context) {
+	serviceName := "xiaohongshu-mcp"
+	port := c.Request.Host
+
+	c.JSON(http.StatusOK, gin.H{
 		"service":   "xiaohongshu-mcp",
-		"account":   "ai-report",
-		"timestamp": "now",
-	}, "服务正常")
+		"status":    "running",
+		"port":      port,
+		"service":   serviceName,
+	})
 }
 
-// myProfileHandler 我的信息
 func (s *AppServer) myProfileHandler(c *gin.Context) {
-	// 获取当前登录用户信息
 	result, err := s.xiaohongshuService.GetMyProfile(c.Request.Context())
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "GET_MY_PROFILE_FAILED",
-			"获取我的主页失败", err.Error())
+		logrus.Errorf("获取个人主页失败: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	c.Set("account", "ai-report")
-	respondSuccess(c, map[string]any{"data": result}, "获取我的主页成功")
+	c.JSON(http.StatusOK, SuccessResponse{Data: result})
+}
+
+func (s *AppServer) checkLoginStatus(ctx *gin.Context) {
+	status, err := s.xiaohongshuService.CheckLoginStatus(ctx.Request.Context())
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"is_logged_in": status.IsLoggedIn,
+		"username":     status.Username,
+	})
+}
+
+func (s *AppServer) checkLoginStatusAPI(c *gin.Context) {
+	status, err := s.xiaohongshuService.CheckLoginStatus(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"ok":    false,
+			"error": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"ok": true,
+		"data": gin.H{
+			"is_logged_in": status.IsLoggedIn,
+			"username":     status.Username,
+		},
+	})
+}
+
+func parseIntParam(ctx *gin.Context, key string, defaultVal int) int {
+	val := ctx.Query(key)
+	if val == "" {
+		return defaultVal
+	}
+	if i, err := strconv.Atoi(val); err == nil {
+		return i
+	}
+	return defaultVal
 }
