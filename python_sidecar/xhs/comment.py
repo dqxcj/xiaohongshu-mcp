@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from python_sidecar.agent_browser import open_page, snapshot, fill, click
+from python_sidecar.xhs.publish import _find_ref, _must_find
 
 logger = logging.getLogger(__name__)
 
@@ -12,19 +13,15 @@ async def post_comment(feed_id: str, content: str) -> dict:
     await asyncio.sleep(3)
 
     snap = await snapshot("-i")
-    for line in snap.split("\n"):
-        if "评论" in line and "textbox" in line.lower():
-            ref = line.split("[ref=")[-1].rstrip("]")
-            await click(ref)
-            await fill(ref, content)
-            await asyncio.sleep(0.5)
-            snap2 = await snapshot("-i")
-            for l2 in snap2.split("\n"):
-                if "发送" in l2 and "button" in l2.lower():
-                    r2 = l2.split("[ref=")[-1].rstrip("]")
-                    await click(r2)
-                    break
-            break
+    ref = _must_find(snap, "找到评论输入框", "评论", "textbox")
+    await click(ref)
+    await fill(ref, content)
+    await asyncio.sleep(0.5)
+
+    snap2 = await snapshot("-i")
+    send_ref = _find_ref(snap2, "发送", "button")
+    if send_ref:
+        await click(send_ref)
 
     return {"success": True, "message": "评论发表成功"}
 
@@ -34,17 +31,12 @@ async def reply_comment(feed_id: str, comment_id: str, content: str) -> dict:
     await asyncio.sleep(3)
 
     snap = await snapshot("-i")
-    for line in snap.split("\n"):
-        if "回复" in line and "button" in line.lower():
-            ref = line.split("[ref=")[-1].rstrip("]")
-            await click(ref)
-            await asyncio.sleep(0.5)
-            snap2 = await snapshot("-i")
-            for l2 in snap2.split("\n"):
-                if "textbox" in l2.lower():
-                    r2 = l2.split("[ref=")[-1].rstrip("]")
-                    await fill(r2, content)
-                    break
-            break
+    ref = _must_find(snap, "找到回复按钮", "回复", "button")
+    await click(ref)
+    await asyncio.sleep(0.5)
+
+    snap2 = await snapshot("-i")
+    ref2 = _must_find(snap2, "找到回复输入框", "textbox")
+    await fill(ref2, content)
 
     return {"success": True, "message": "评论回复成功"}

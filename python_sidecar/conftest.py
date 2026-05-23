@@ -2,6 +2,7 @@ import sys
 import os
 from unittest.mock import AsyncMock, patch
 
+# Make sure python_sidecar is importable from tests
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
@@ -9,25 +10,39 @@ import pytest
 
 @pytest.fixture
 def mock_agent_browser():
-    """Mock all agent-browser async functions to return controlled snapshots."""
-    with patch("python_sidecar.agent_browser.run", new_callable=AsyncMock) as mock_run, \
-         patch("python_sidecar.agent_browser.open_page", new_callable=AsyncMock) as mock_open, \
-         patch("python_sidecar.agent_browser.snapshot", new_callable=AsyncMock) as mock_snap, \
-         patch("python_sidecar.agent_browser.click", new_callable=AsyncMock) as mock_click, \
-         patch("python_sidecar.agent_browser.fill", new_callable=AsyncMock) as mock_fill, \
-         patch("python_sidecar.agent_browser.upload", new_callable=AsyncMock) as mock_upload, \
-         patch("python_sidecar.agent_browser.screenshot", new_callable=AsyncMock) as mock_ss, \
-         patch("python_sidecar.agent_browser.scroll", new_callable=AsyncMock) as mock_scroll:
-        yield {
-            "run": mock_run,
-            "open_page": mock_open,
-            "snapshot": mock_snap,
-            "click": mock_click,
-            "fill": mock_fill,
-            "upload": mock_upload,
-            "screenshot": mock_ss,
-            "scroll": mock_scroll,
-        }
+    """Mock agent-browser async functions in both source and consumer modules.
+
+    Publish/login/feeds modules import via ``from python_sidecar.agent_browser
+    import snapshot`` which creates a *local* reference in their own namespace.
+    Patching only ``python_sidecar.agent_browser.snapshot`` does NOT affect
+    those local references, so we patch consumer module namespaces too.
+    """
+    from python_sidecar.xhs import login as login_mod
+    from python_sidecar.xhs import publish as publish_mod
+    from python_sidecar.xhs import publish_video as publish_video_mod
+    from python_sidecar.xhs import feeds as feeds_mod
+    from python_sidecar.xhs import comment as comment_mod
+    from python_sidecar.xhs import like_favorite as like_favorite_mod
+
+    consumers = [login_mod, publish_mod, publish_video_mod, feeds_mod, comment_mod, like_favorite_mod]
+
+    source_patchers = []
+    mocks = {}
+    for name in ["run", "open_page", "snapshot", "click", "fill", "upload",
+                  "screenshot", "scroll"]:
+        p = patch(f"python_sidecar.agent_browser.{name}", new_callable=AsyncMock)
+        mocked = p.start()
+        source_patchers.append(p)
+        mocks[name] = mocked
+
+    for mod in consumers:
+        for name in mocks:
+            setattr(mod, name, mocks[name])
+
+    yield mocks
+
+    for p in source_patchers:
+        p.stop()
 
 
 SAMPLE_PUBLISH_SNAPSHOT = """\
@@ -39,6 +54,7 @@ button "添加话题" [ref=e5]
 button "发布" [ref=e6]
 textbox "" [ref=e7]
 button "发送" [ref=e8]
+button "upload" [ref=e9]
 """
 
 SAMPLE_LOGGED_IN_SNAPSHOT = """\
